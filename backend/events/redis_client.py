@@ -5,7 +5,11 @@ Supports both real Redis server and in-memory fakeredis for self-contained testi
 
 import os
 from typing import Optional
+from dotenv import load_dotenv
 import redis.asyncio as aioredis
+
+load_dotenv()
+
 
 
 def get_redis_url() -> str:

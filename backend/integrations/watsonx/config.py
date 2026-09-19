@@ -15,10 +15,15 @@ class WatsonxSettings(BaseModel):
     """
     model_config = ConfigDict(extra="ignore")
 
-    # Mock mode flag: default to True for local testing / sandbox execution
+    # Mock mode flag: default to True for local testing or if API key is missing/placeholder
     mock_mode: bool = Field(
-        default_factory=lambda: os.getenv("WATSONX_MOCK", "true").lower() in ("true", "1", "yes")
+        default_factory=lambda: (
+            os.getenv("WATSONX_MOCK", "true").lower() in ("true", "1", "yes")
+            or not os.getenv("WATSONX_API_KEY")
+            or "PASTE" in os.getenv("WATSONX_API_KEY", "")
+        )
     )
+
 
     # IBM Cloud / watsonx instance configuration
     api_key: Optional[str] = Field(

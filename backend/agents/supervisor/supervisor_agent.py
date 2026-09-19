@@ -6,6 +6,7 @@ STRICT RULE: The supervisor MUST NOT directly execute production actions.
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any, AsyncGenerator, Optional
 from google.adk.agents import BaseAgent, InvocationContext
@@ -58,12 +59,30 @@ class SupervisorAgent(BaseAgent):
 
         # If sub_agents were not explicitly provided, register default specialists
         if not self.sub_agents:
-            self.sub_agents = [
-                MockRenderQAAgent(),
-                MockHardwareDiagnosticAgent(),
-                MockAssetValidationAgent(),
-                MockHistoricalEvidenceAgent(),
-            ]
+            if os.getenv("VFX_MOCK_SPECIALISTS", "false").lower() in ("true", "1"):
+                logger.info("Initializing Supervisor with MOCK specialist subagents.")
+                self.sub_agents = [
+                    MockRenderQAAgent(),
+                    MockHardwareDiagnosticAgent(),
+                    MockAssetValidationAgent(),
+                    MockHistoricalEvidenceAgent(),
+                ]
+            else:
+                # Lazy import avoids circular dependency with specialist modules importing supervisor schemas
+                from backend.agents.asset_validation.agent import AssetValidationAgent
+                from backend.agents.hardware.agent import HardwareDiagnosticAgent
+                from backend.agents.historical.agent import HistoricalEvidenceAgent
+                from backend.agents.render_qa.agent import RenderQAAgent
+
+                logger.info("Initializing Supervisor with REAL ADK specialist subagents.")
+                self.sub_agents = [
+                    RenderQAAgent(),
+                    HardwareDiagnosticAgent(),
+                    AssetValidationAgent(),
+                    HistoricalEvidenceAgent(),
+                ]
+
+
 
     def _get_specialist(self, agent_name: str) -> Optional[BaseAgent]:
         """Lookup a registered sub-agent by name."""

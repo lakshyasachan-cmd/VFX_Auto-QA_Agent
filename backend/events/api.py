@@ -102,15 +102,37 @@ async def ingest_batch(
     "/health",
     response_model=HealthResponse,
     summary="Health check",
-    description="Returns service status and Redis connectivity.",
+    description="Returns service status, database connectivity, and Redis connectivity.",
 )
 async def health_check(
     service: EventIngestionService = Depends(get_event_service),
 ) -> HealthResponse:
-    is_healthy = await check_redis_health(service.redis_client)
+    from sqlalchemy import text
+    from backend.database.session import engine
+
+    # Check database connectivity
+    db_connected = False
+    db_name = None
+    db_dialect = engine.url.drivername
+    try:
+        with engine.connect() as conn:
+            db_name = conn.execute(text("SELECT current_database();")).scalar()
+            db_connected = True
+    except Exception:
+        db_connected = False
+
+    # Check Redis connectivity
+    is_redis_healthy = await check_redis_health(service.redis_client)
+
+    overall_status = "healthy" if db_connected else "degraded"
+
     return HealthResponse(
-        status="healthy" if is_healthy or service.redis_client is None else "degraded",
-        redis_connected=is_healthy,
+        status=overall_status,
+        redis_connected=is_redis_healthy,
+        database_connected=db_connected,
+        database_name=db_name,
+        database_dialect=db_dialect,
         service="vfx-event-ingestion",
         timestamp=format_iso8601_utc(now_utc()),
     )
+

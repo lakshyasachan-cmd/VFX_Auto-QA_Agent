@@ -6,12 +6,18 @@ Supports PostgreSQL (production) and SQLite (tests and local development).
 import os
 from collections.abc import Generator
 from typing import Any
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+# Ensure .env is loaded before reading DATABASE_URL
+load_dotenv(override=True)
+
 
 from backend.database.base import Base
 # Ensure all models are imported so Base.metadata knows about them
 import backend.database.models  # noqa: F401
+
 
 
 def get_database_url() -> str:

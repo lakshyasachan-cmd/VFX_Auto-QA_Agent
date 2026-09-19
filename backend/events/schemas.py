@@ -123,5 +123,9 @@ class HealthResponse(BaseModel):
     """Health check response."""
     status: str
     redis_connected: bool
+    database_connected: bool = True
+    database_name: Optional[str] = None
+    database_dialect: Optional[str] = None
     service: str = "vfx-event-ingestion"
     timestamp: str
+

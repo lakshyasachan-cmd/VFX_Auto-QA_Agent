@@ -2,9 +2,19 @@
 FastAPI application entry point for the VFX Event Ingestion Subsystem.
 """
 
-# Load .env file first — must happen before any backend imports that read os.getenv()
+import sys
+from pathlib import Path
+
+# Ensure project root is always on sys.path regardless of where uvicorn is launched from
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+# Load .env file from project root with override=True to reload updated variables
 from dotenv import load_dotenv
-load_dotenv()  # reads .env from project root (no-op if not found, env vars already set)
+load_dotenv(dotenv_path=ROOT_DIR / ".env", override=True)
+
+
 
 from contextlib import asynccontextmanager
 import logging
@@ -25,6 +35,17 @@ logger = logging.getLogger("vfx.events.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup: test database connection and log status
+    from sqlalchemy import text
+    from backend.database.session import engine
+    try:
+        with engine.connect() as conn:
+            db_name = conn.execute(text("SELECT current_database();")).scalar()
+            db_user = conn.execute(text("SELECT current_user;")).scalar()
+            logger.info("Connected to database '%s' as user '%s' (%s).", db_name, db_user, engine.url.drivername)
+    except Exception as exc:
+        logger.error("Database connection failed: %s", exc)
+
     # Startup: attempt Redis connection with graceful fallback to in-memory mode
     redis_client = None
     try:
@@ -37,6 +58,7 @@ async def lifespan(app: FastAPI):
         redis_client = None
 
     service = EventIngestionService(redis_client=redis_client)
+
     app.state.event_service = service
     app.state.redis_client = redis_client
 
@@ -115,7 +137,23 @@ app.include_router(governance_router)
 app.include_router(mcp_router)
 
 
+@app.get("/", summary="Root index")
+async def root():
+    return {
+        "service": "VFX Mission Control API",
+        "status": "online",
+        "documentation": "/docs",
+        "health_check": "/api/v1/health",
+        "mcp_tools": "/api/v1/mcp/tools",
+    }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
+
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8001, reload=True)
+
