@@ -37,22 +37,32 @@ class RootCauseReasoningEngine:
     def __init__(
         self,
         gemini_client: Optional[Any] = None,
-        model_name: str = "gemini-2.5-flash",
-        use_mock: bool = True,
+        model_name: Optional[str] = None,
+        use_mock: Optional[bool] = None,
     ) -> None:
-        self.model_name = model_name
+        # Read model from env var, fall back to gemini-2.5-flash
+        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+        # Auto-detect mock mode: use_mock=True only if GEMINI_API_KEY is absent
+        api_key_present = bool(os.getenv("GEMINI_API_KEY"))
+        if use_mock is None:
+            use_mock = not api_key_present  # True when key missing, False when key set
         self.use_mock = use_mock
+
         if gemini_client is not None:
             self.client = gemini_client
-        elif use_mock or not os.getenv("GEMINI_API_KEY"):
+        elif use_mock or not api_key_present:
+            logger.info("GEMINI_API_KEY not set or use_mock=True — using MockGeminiClient.")
             self.client = MockGeminiClient()
         else:
             try:
                 from google import genai
                 self.client = genai.Client()
+                logger.info("Live Gemini client initialized with model: %s", self.model_name)
             except Exception as e:
                 logger.warning(f"Failed to initialize live GenAI client: {e}. Falling back to mock.")
                 self.client = MockGeminiClient()
+
 
     def analyze(self, context: ReasoningContextInput) -> RootCauseAnalysis:
         """

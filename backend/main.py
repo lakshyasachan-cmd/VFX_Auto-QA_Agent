@@ -2,6 +2,10 @@
 FastAPI application entry point for the VFX Event Ingestion Subsystem.
 """
 
+# Load .env file first — must happen before any backend imports that read os.getenv()
+from dotenv import load_dotenv
+load_dotenv()  # reads .env from project root (no-op if not found, env vars already set)
+
 from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI
@@ -15,6 +19,7 @@ from backend.mcp.api import router as mcp_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("vfx.events.main")
+
 
 
 

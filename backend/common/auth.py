@@ -35,20 +35,37 @@ class AuthenticatedUser(BaseModel):
     is_active: bool = True
 
 
-# In-memory API key to user mapping (configured via environment variables or defaults)
-def get_configured_api_keys() -> dict[str, AuthenticatedUser]:
-    """Load API keys from environment variables, falling back to secure test defaults."""
-    admin_key = os.getenv("VFX_ADMIN_API_KEY", "vfx-admin-secret-key-prod-001")
-    lead_td_key = os.getenv("VFX_LEAD_TD_API_KEY", "vfx-lead-td-secret-key-prod-002")
-    td_key = os.getenv("VFX_TD_API_KEY", "vfx-td-standard-key-prod-003")
-    system_key = os.getenv("VFX_SYSTEM_API_KEY", "vfx-system-internal-key-prod-004")
-
-    return {
-        admin_key: AuthenticatedUser(user_id="usr-admin-01", username="admin_director", role=UserRole.ADMIN),
-        lead_td_key: AuthenticatedUser(user_id="usr-lead-01", username="lead_pipeline_td", role=UserRole.LEAD_TD),
-        td_key: AuthenticatedUser(user_id="usr-td-01", username="alex_pipeline_td", role=UserRole.TD),
-        system_key: AuthenticatedUser(user_id="usr-sys-01", username="system_orchestrator", role=UserRole.SYSTEM),
+# In-memory API key to user mapping (loaded from environment variables — no hardcoded fallbacks)
+def get_configured_api_keys() -> dict[str, "AuthenticatedUser"]:
+    """
+    Load API keys strictly from environment variables.
+    Raises RuntimeError on startup if any required key is missing.
+    This prevents accidental deployment with insecure default credentials.
+    """
+    required_keys = {
+        "VFX_ADMIN_API_KEY": ("usr-admin-01", "admin_director", UserRole.ADMIN),
+        "VFX_LEAD_TD_API_KEY": ("usr-lead-01", "lead_pipeline_td", UserRole.LEAD_TD),
+        "VFX_TD_API_KEY": ("usr-td-01", "alex_pipeline_td", UserRole.TD),
+        "VFX_SYSTEM_API_KEY": ("usr-sys-01", "system_orchestrator", UserRole.SYSTEM),
     }
+
+    result: dict[str, "AuthenticatedUser"] = {}
+    missing = []
+
+    for env_var, (user_id, username, role) in required_keys.items():
+        key = os.getenv(env_var)
+        if not key:
+            missing.append(env_var)
+        else:
+            result[key] = AuthenticatedUser(user_id=user_id, username=username, role=role)
+
+    if missing:
+        raise RuntimeError(
+            f"Missing required API key environment variables: {', '.join(missing)}. "
+            "Set them in your .env file. See .env.example for reference."
+        )
+
+    return result
 
 
 def authenticate_request(

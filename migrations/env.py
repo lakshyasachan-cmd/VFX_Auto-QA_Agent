@@ -8,12 +8,17 @@ from alembic import context
 import os
 import sys
 
+# Load .env so alembic upgrade head picks up DATABASE_URL when run locally
+from dotenv import load_dotenv
+load_dotenv()
+
 # Ensure project root is in python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from backend.database.base import Base
 import backend.database.models  # noqa: F401
 from backend.database.session import get_database_url
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
