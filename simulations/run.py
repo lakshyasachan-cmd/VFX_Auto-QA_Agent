@@ -14,6 +14,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Ensure root directory is on sys.path when executed directly
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
