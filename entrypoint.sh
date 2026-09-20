@@ -35,7 +35,7 @@ print('       Notice: Database unreachable after 30s. Starting server with fallb
 "
 
 echo "[2/2] Running Alembic migrations (if any)..."
-alembic upgrade head || echo "       Alembic migration notice: Schema already current or initialized."
+alembic upgrade head 2>/dev/null || alembic stamp head 2>/dev/null || echo "       Alembic migration notice: Schema already current or initialized."
 
 echo "[3/3] Starting uvicorn API server on port ${PORT}..."
 exec uvicorn backend.main:app \

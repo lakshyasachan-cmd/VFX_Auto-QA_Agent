@@ -5,7 +5,13 @@ Ensures all timestamps are strictly timezone-aware UTC.
 
 from datetime import datetime, timezone
 from typing import Any, Optional
-import dateutil.parser
+
+try:
+    import dateutil.parser
+    HAS_DATEUTIL = True
+except ImportError:
+    dateutil = None  # type: ignore
+    HAS_DATEUTIL = False
 
 
 def now_utc() -> datetime:
@@ -63,14 +69,29 @@ def parse_timestamp(value: Optional[Any]) -> datetime:
         except ValueError:
             pass
 
+        # Try standard library ISO-8601 parser first (Python 3.11+ zero-dependency)
         try:
-            parsed = dateutil.parser.parse(v)
+            clean_str = v.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(clean_str)
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             else:
                 parsed = parsed.astimezone(timezone.utc)
             return parsed
-        except (ValueError, OverflowError) as exc:
-            raise ValueError(f"Unparseable timestamp format: '{value}'") from exc
+        except Exception:
+            pass
+
+        if HAS_DATEUTIL and dateutil:
+            try:
+                parsed = dateutil.parser.parse(v)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                else:
+                    parsed = parsed.astimezone(timezone.utc)
+                return parsed
+            except (ValueError, OverflowError) as exc:
+                raise ValueError(f"Unparseable timestamp format: '{value}'") from exc
+
+        raise ValueError(f"Unparseable timestamp format: '{value}'")
 
     raise ValueError(f"Unsupported timestamp type: {type(value)} ({value})")
