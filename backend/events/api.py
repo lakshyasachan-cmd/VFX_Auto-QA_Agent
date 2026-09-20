@@ -117,7 +117,11 @@ async def health_check(
     db_dialect = engine.url.drivername
     try:
         with engine.connect() as conn:
-            db_name = conn.execute(text("SELECT current_database();")).scalar()
+            if "sqlite" in db_dialect.lower():
+                conn.execute(text("SELECT 1;"))
+                db_name = "vfx_platform.db"
+            else:
+                db_name = conn.execute(text("SELECT current_database();")).scalar()
             db_connected = True
     except Exception as exc:
         db_connected = False

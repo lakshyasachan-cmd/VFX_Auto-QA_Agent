@@ -56,17 +56,34 @@ def get_database_url() -> str:
     return url
 
 
-# Default sync engine and session factory
-_default_url = get_database_url()
-connect_args = {"check_same_thread": False} if _default_url.startswith("sqlite") else {}
+# Default sync engine and session factory with automatic fallback
+def create_default_engine():
+    """Create a database engine with fallback to SQLite if PostgreSQL is unreachable."""
+    url = get_database_url()
+    echo = os.getenv("SQL_ECHO", "false").lower() == "true"
 
-engine = create_engine(
-    _default_url,
-    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
-    connect_args=connect_args,
-    pool_pre_ping=True,
-)
+    if url.startswith("postgresql://") or url.startswith("postgres://"):
+        try:
+            probe_engine = create_engine(
+                url,
+                echo=False,
+                connect_args={"connect_timeout": 3},
+                pool_pre_ping=True,
+            )
+            with probe_engine.connect() as conn:
+                pass
+            return probe_engine
+        except Exception as exc:
+            masked = url.split("@")[-1] if "@" in url else "postgresql"
+            print(f"\n[DATABASE NOTICE] PostgreSQL connection to '{masked}' failed ({exc}).")
+            print("[DATABASE NOTICE] Gracefully falling back to SQLite engine (vfx_platform.db).\n")
+            url = "sqlite:///./vfx_platform.db"
 
+    c_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    return create_engine(url, echo=echo, connect_args=c_args, pool_pre_ping=True)
+
+
+engine = create_default_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

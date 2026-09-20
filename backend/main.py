@@ -42,9 +42,13 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         with engine.connect() as conn:
-            db_name = conn.execute(text("SELECT current_database();")).scalar()
-            db_user = conn.execute(text("SELECT current_user;")).scalar()
-            logger.info("Connected to database '%s' as user '%s' (%s).", db_name, db_user, engine.url.drivername)
+            if "sqlite" in engine.url.drivername.lower():
+                conn.execute(text("SELECT 1;"))
+                logger.info("Connected to database 'vfx_platform.db' (%s).", engine.url.drivername)
+            else:
+                db_name = conn.execute(text("SELECT current_database();")).scalar()
+                db_user = conn.execute(text("SELECT current_user;")).scalar()
+                logger.info("Connected to database '%s' as user '%s' (%s).", db_name, db_user, engine.url.drivername)
     except Exception as exc:
         logger.error("Database connection failed: %s", exc)
 
