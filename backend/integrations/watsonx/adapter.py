@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 WatsonxWorkflowAdapter translating VFX workflow actions into IBM watsonx Orchestrate executions.
 Supports mock mode (WATSONX_MOCK=true) without external network calls,
