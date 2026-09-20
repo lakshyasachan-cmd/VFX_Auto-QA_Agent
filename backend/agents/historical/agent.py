@@ -10,8 +10,11 @@ STRICT INVARIANTS:
 4. The agent must NEVER execute production actions or remediation directly.
 """
 
+import logging
 from typing import Any, Optional
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("vfx.agents.historical")
 
 from backend.agents.historical.mock_history import (
     HistoricalDataStore,
@@ -59,6 +62,19 @@ class HistoricalEvidenceAgent(BaseSpecialistAgent):
         super().model_post_init(__context)
         if self.store is None:
             self.store = history_store
+
+        # Auto-wire live PostgreSQL session if not explicitly provided and not running under pytest
+        import os
+        if self.session is None and not os.getenv("PYTEST_CURRENT_TEST"):
+            try:
+                from backend.database.session import SessionLocal
+                self.session = SessionLocal()
+                logger.info("HistoricalEvidenceAgent auto-wired to live PostgreSQL database session.")
+            except Exception as exc:
+                logger.warning("Could not auto-wire live PostgreSQL session for HistoricalEvidenceAgent: %s", exc)
+                self.session = None
+
+
 
     def analyze_incident(
         self,

@@ -13,14 +13,25 @@ from backend.agents.render_qa.schemas import (
 from backend.agents.render_qa.simulated_store import SimulatedRenderFarmStore, farm_store
 
 
+def _get_store(store: Optional[Any]) -> Any:
+    """Helper to lazily resolve active farm store or farm adapter."""
+    if store is not None:
+        return store
+    try:
+        from backend.integrations.render_farm.adapter import farm_adapter
+        return farm_adapter
+    except ImportError:
+        return farm_store
+
+
 def inspect_render_job(
     job_id: str,
-    store: Optional[SimulatedRenderFarmStore] = None,
+    store: Optional[Any] = None,
 ) -> dict[str, Any]:
     """
     Tool 1: Inspects the overall render job record, renderer version, status, and frame counts.
     """
-    s = store or farm_store
+    s = _get_store(store)
     record = s.get_job_record(job_id)
     if not record:
         return {
@@ -69,12 +80,12 @@ def inspect_render_job(
 def inspect_failed_frames(
     job_id: str,
     frame_range: Optional[str] = None,
-    store: Optional[SimulatedRenderFarmStore] = None,
+    store: Optional[Any] = None,
 ) -> list[FrameInspectionDetail]:
     """
     Tool 2: Inspects specific failed frames, extracting exact error logs, exit codes, and VRAM telemetry.
     """
-    s = store or farm_store
+    s = _get_store(store)
     record = s.get_job_record(job_id)
     if not record:
         return []
@@ -127,12 +138,12 @@ def compare_frame_metadata(
     job_id: str,
     frame_a: int,
     frame_b: int,
-    store: Optional[SimulatedRenderFarmStore] = None,
+    store: Optional[Any] = None,
 ) -> FrameComparisonResult:
     """
     Tool 3: Compares metadata and metrics between two frames in a sequence to detect anomalies or drops.
     """
-    s = store or farm_store
+    s = _get_store(store)
     record = s.get_job_record(job_id)
     discrepancies: list[str] = []
 
@@ -214,12 +225,12 @@ def compare_frame_metadata(
 def detect_frame_corruption(
     job_id: str,
     frame: int,
-    store: Optional[SimulatedRenderFarmStore] = None,
+    store: Optional[Any] = None,
 ) -> FrameCorruptionReport:
     """
     Tool 4: Analyzes physical output file on disk for NaN pixels, truncated headers, or 0-byte corruptions.
     """
-    s = store or farm_store
+    s = _get_store(store)
     telemetry = s.get_output_file_telemetry(job_id, frame)
 
     if telemetry is None:

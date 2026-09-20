@@ -25,6 +25,7 @@ from backend.events.api import router as events_router
 from backend.events.redis_client import create_redis_client
 from backend.events.service import EventIngestionService
 from backend.governance.api import router as governance_router
+from backend.incidents.api import router as incidents_router
 from backend.mcp.api import router as mcp_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -96,11 +97,21 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        # Local development
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        # Docker internal service hostname (dashboard container)
+        "http://dashboard:3000",
+        # Via Nginx reverse proxy on host
+        "http://localhost",
+        "http://localhost:80",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 @app.middleware("http")
@@ -134,7 +145,9 @@ async def correlation_and_security_middleware(request: Request, call_next):
 
 app.include_router(events_router)
 app.include_router(governance_router)
+app.include_router(governance_router, prefix="/api/v1/governance/approvals")
 app.include_router(mcp_router)
+app.include_router(incidents_router)
 
 
 @app.get("/", summary="Root index")

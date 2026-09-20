@@ -20,9 +20,10 @@ def governance_svc():
 
 @pytest.fixture
 def client(governance_svc):
-    # Set the test governance service instance on app state
+    import os
     app.state.governance_service = governance_svc
-    return TestClient(app, headers={"X-API-Key": "vfx-admin-secret-key-prod-001"})
+    admin_key = os.getenv("VFX_ADMIN_API_KEY", "vfx-admin-secret-key-prod-001")
+    return TestClient(app, headers={"X-API-Key": admin_key})
 
 
 # ---------------------------------------------------------------------------

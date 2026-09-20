@@ -41,13 +41,14 @@ class RenderQAAgent(BaseSpecialistAgent):
         "missing output files, pixel corruption (NaN/Inf), and metadata discrepancies."
     )
 
-    # Injected data store (defaults to farm_store)
-    store: SimulatedRenderFarmStore = None  # type: ignore
+    # Injected data store (defaults to farm_adapter)
+    store: Any = None
 
     def model_post_init(self, __context: Any) -> None:
         super().model_post_init(__context)
         if self.store is None:
-            self.store = farm_store
+            from backend.integrations.render_farm.adapter import farm_adapter
+            self.store = farm_adapter
 
     def analyze_job(self, job_id: str, context: Optional[dict[str, Any]] = None) -> RenderQAReport:
         """

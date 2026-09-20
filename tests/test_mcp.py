@@ -54,7 +54,9 @@ def client(mcp_server_instance: MCPServer, governance_svc: GovernanceService) ->
     """TestClient with injected server and governance dependencies."""
     app.state.mcp_server = mcp_server_instance
     app.state.governance_service = governance_svc
-    return TestClient(app, headers={"X-API-Key": "vfx-admin-secret-key-prod-001"})
+    import os
+    admin_key = os.getenv("VFX_ADMIN_API_KEY", "vfx-admin-secret-key-prod-001")
+    return TestClient(app, headers={"X-API-Key": admin_key})
 
 
 # ─────────────────────────────────────────────────────────────

@@ -50,11 +50,18 @@ class AssetValidationAgent(BaseSpecialistAgent):
 
     # Injected repository store (defaults to studio singleton asset_repo)
     store: AssetRepositoryStore = None  # type: ignore
+    shotgrid: Any = None
 
     def model_post_init(self, __context: Any) -> None:
         super().model_post_init(__context)
         if self.store is None:
             self.store = asset_repo
+        if self.shotgrid is None:
+            try:
+                from backend.integrations.shotgrid.adapter import shotgrid_adapter
+                self.shotgrid = shotgrid_adapter
+            except ImportError:
+                self.shotgrid = None
 
     def analyze_asset(
         self,
@@ -79,7 +86,50 @@ class AssetValidationAgent(BaseSpecialistAgent):
         # 1. Validate root asset
         root_val = validate_asset(asset_id, store=self.store)
         if not root_val.get("available"):
-            # Missing root asset -> strictly UNKNOWN, zero invented evidence
+            # Check if incident context provides explicit failure details for this asset
+            err_code = (context or {}).get("error_code") or (context or {}).get("error_details", {}).get("error_code")
+            msg = (context or {}).get("message") or (context or {}).get("error_details", {}).get("message")
+            if err_code or msg:
+                is_corrupt = any(k in str(err_code).upper() or k in str(msg).upper() for k in ["CORRUPT", "MAGIC", "TRUNCAT", "HEADER"])
+                f_type = "CORRUPTED_ASSET_DATA" if is_corrupt else "ASSET_VALIDATION_ERROR"
+                f_context = AssetValidationFinding(
+                    agent="asset_validation",
+                    finding_type=f_type,
+                    severity="CRITICAL" if is_corrupt else "HIGH",
+                    confidence=0.95,
+                    evidence=[
+                        f"Asset validation failure reported for '{asset_id}': {err_code or 'UNKNOWN_ERROR'}",
+                        f"Diagnostic message: {msg or 'Integrity check failed'}",
+                    ],
+                    asset_ids=[asset_id],
+                    dependency_chain=[asset_id],
+                    observed=[
+                        f"Asset validation alert: {err_code}",
+                        f"Error detail: {msg}",
+                    ],
+                    inferred=[
+                        "Downstream render delegate or DCC aborted due to corrupted or unreadable asset payload",
+                    ],
+                    unknown=[
+                        "Underlying storage bit rot vs upstream export crash",
+                    ],
+                    details={"asset_id": asset_id, "error_code": err_code, "message": msg},
+                )
+                return AssetValidationReport(
+                    agent="asset_validation",
+                    root_asset_id=asset_id,
+                    is_valid=False,
+                    total_assets_inspected=1,
+                    missing_asset_ids=[] if is_corrupt else [asset_id],
+                    corrupt_asset_ids=[asset_id] if is_corrupt else [],
+                    version_mismatches=[],
+                    dependency_chain=[asset_id],
+                    findings=[f_context],
+                    overall_confidence=0.95,
+                    summary=f"Validation failed for '{asset_id}': {err_code} - {msg}",
+                )
+
+            # Missing root asset with no context -> strictly UNKNOWN, zero invented evidence
             reason = root_val.get("reason", f"Asset '{asset_id}' not found in catalog")
             f_missing_root = AssetValidationFinding(
                 agent="asset_validation",
@@ -107,6 +157,7 @@ class AssetValidationAgent(BaseSpecialistAgent):
                 overall_confidence=0.0,
                 summary=f"Validation aborted: Asset '{asset_id}' does not exist in repository.",
             )
+
 
         # 2. Dependency traversal
         dep_res = check_dependencies(asset_id, depth=10, store=self.store)
@@ -275,7 +326,59 @@ class AssetValidationAgent(BaseSpecialistAgent):
             )
             findings.append(f_ver)
 
-        # 6. Healthy Asset Graph
+        # 6. Validate Editorial Cut Frame Coverage via ShotGrid
+        shot_code = (context or {}).get("shot") or (root_val.get("metadata") or {}).get("shot")
+        asset_frame_range = (context or {}).get("frame_range") or (root_val.get("metadata") or {}).get("frame_range")
+        if shot_code and asset_frame_range and self.shotgrid:
+            project_name = (context or {}).get("project")
+            shot_info = self.shotgrid.get_shot(project_name=project_name, shot_code=shot_code)
+            if shot_info:
+                cut_in = int(shot_info.get("cut_in", 1001))
+                cut_out = int(shot_info.get("cut_out", 1050))
+                expected_cut_frames = set(range(cut_in, cut_out + 1))
+                if "-" in str(asset_frame_range):
+                    try:
+                        sf, ef = map(int, str(asset_frame_range).split("-"))
+                        actual_frames = set(range(sf, ef + 1))
+                        missing_cut = sorted(list(expected_cut_frames - actual_frames))
+                        if missing_cut:
+                            cov_pct = round(len(expected_cut_frames & actual_frames) / len(expected_cut_frames) * 100.0, 1)
+                            f_cut = AssetValidationFinding(
+                                agent="asset_validation",
+                                finding_type="MISSING_CUT_RANGE_FRAMES",
+                                severity="CRITICAL",
+                                confidence=0.98,
+                                evidence=[
+                                    f"Published cache for shot '{shot_code}' covers {cov_pct}% of editorial cut ({cut_in}-{cut_out})",
+                                    f"Missing {len(missing_cut)} frames required by editorial: {missing_cut[:10]}",
+                                ],
+                                asset_ids=[asset_id],
+                                dependency_chain=dep_chain,
+                                observed=[
+                                    f"ShotGrid editorial cut range: {cut_in} to {cut_out}",
+                                    f"Asset frame range: {asset_frame_range}",
+                                    f"Missing frames from cut: {missing_cut[:15]}",
+                                ],
+                                inferred=[
+                                    f"Playback in editorial will fail on frame {missing_cut[0]}",
+                                    "Upstream department cache export was trimmed prematurely",
+                                ],
+                                unknown=[
+                                    "Whether editorial recently extended the cut without notifying department leads",
+                                ],
+                                details={
+                                    "shot_code": shot_code,
+                                    "cut_in": cut_in,
+                                    "cut_out": cut_out,
+                                    "missing_frames": missing_cut,
+                                    "coverage_pct": cov_pct,
+                                },
+                            )
+                            findings.append(f_cut)
+                    except Exception:
+                        pass
+
+        # 7. Healthy Asset Graph
         is_valid = len(findings) == 0
         if is_valid:
             f_clean = AssetValidationFinding(

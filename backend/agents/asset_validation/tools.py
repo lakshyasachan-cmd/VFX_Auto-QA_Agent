@@ -13,6 +13,7 @@ STRICT RULES:
 - Protects against cycles and infinite loops.
 """
 
+import os
 from typing import Any, Optional
 from backend.agents.asset_validation.mock_asset_repo import (
     AssetRepositoryStore,
@@ -22,6 +23,68 @@ from backend.agents.asset_validation.schemas import (
     FileIntegrityResult,
 )
 
+# Recognized VFX magic byte signatures
+VFX_MAGIC_SIGNATURES = {
+    b"VDB ": "OpenVDB",
+    b"\x76\x2f\x31\x01": "OpenEXR",
+    b"Ogawa": "Alembic Ogawa",
+    b"\x89HDF": "Alembic HDF5",
+    b"#usda": "USD Text",
+    b"PXR-USDC": "USD Crate Binary",
+    b"\x89PNG": "PNG",
+    b"II*\x00": "TIFF Little-Endian",
+    b"MM\x00*": "TIFF Big-Endian",
+    b"\xff\xd8\xff": "JPEG",
+}
+
+
+def inspect_physical_file(file_path: str) -> Optional[dict[str, Any]]:
+    """Inspect a physical file on the local filesystem or mounted NAS storage."""
+    if not os.path.exists(file_path):
+        return None
+    try:
+        stat = os.stat(file_path)
+        size = stat.st_size
+        header_valid = False
+        format_detected = "Unknown"
+        err_msg = None
+
+        if size == 0:
+            err_msg = "0-byte file length"
+        elif size < 4:
+            err_msg = f"Truncated file: size is only {size} bytes"
+        else:
+            with open(file_path, "rb") as f:
+                header = f.read(16)
+            for magic, fmt in VFX_MAGIC_SIGNATURES.items():
+                if header.startswith(magic):
+                    header_valid = True
+                    format_detected = fmt
+                    break
+            if not header_valid and size > 32:
+                # If size is sufficient and file readable, header is treated as valid generic format
+                header_valid = True
+                format_detected = "Generic Binary/Text"
+
+        is_intact = (size > 0) and (err_msg is None)
+        return {
+            "exists": True,
+            "file_size_bytes": size,
+            "is_intact": is_intact,
+            "header_valid": header_valid,
+            "format": format_detected,
+            "error_message": err_msg,
+        }
+    except Exception as exc:
+        return {
+            "exists": True,
+            "file_size_bytes": 0,
+            "is_intact": False,
+            "header_valid": False,
+            "format": "Error",
+            "error_message": f"Filesystem permission/I/O error: {exc}",
+        }
+
 
 def validate_asset(
     asset_id: str,
@@ -30,8 +93,33 @@ def validate_asset(
     """
     Validates a primary asset record in the repository.
     Inspects existence, file path, disk presence, corruption flag, and metadata.
-    Returns available=False if asset is not found.
+    Supports real on-disk files as well as simulated catalog records.
     """
+    # 1. Check if asset_id is a real physical file on disk/NAS
+    if os.path.exists(asset_id):
+        p_info = inspect_physical_file(asset_id)
+        if p_info:
+            ext = os.path.splitext(asset_id)[1].lstrip(".").upper() or "UNKNOWN"
+            issues = [p_info["error_message"]] if p_info["error_message"] else []
+            return {
+                "available": True,
+                "found": True,
+                "asset_id": os.path.basename(asset_id),
+                "file_path": os.path.abspath(asset_id),
+                "asset_type": ext,
+                "version": "live_disk",
+                "expected_version": "live_disk",
+                "file_size_bytes": p_info["file_size_bytes"],
+                "exists_on_disk": True,
+                "is_corrupted": not p_info["is_intact"],
+                "corruption_reason": p_info["error_message"],
+                "is_valid": p_info["is_intact"],
+                "issues": issues,
+                "dependencies": [],
+                "metadata": {"format": p_info["format"], "real_filesystem": True},
+            }
+
+    # 2. Query repository store
     s = store or asset_repo
     node = s.get_asset(asset_id)
     if not node:
@@ -63,6 +151,7 @@ def validate_asset(
         "exists_on_disk": node.exists_on_disk,
         "is_corrupted": node.is_corrupted,
         "corruption_reason": node.corruption_reason,
+
         "is_valid": is_valid,
         "issues": issues,
         "dependencies": node.dependencies,
@@ -274,8 +363,29 @@ def validate_file_integrity(
 ) -> dict[str, Any]:
     """
     Inspects physical file integrity, magic header validity, and byte sizes for an asset.
-    Detects truncated Alembic Ogawa files, 0-byte files, and corrupted headers.
+    Supports real physical filesystem and mounted NAS storage, as well as simulated catalog assets.
     """
+    # 1. Inspect real physical file on disk/NAS if it exists
+    if os.path.exists(file_path):
+        p_info = inspect_physical_file(file_path)
+        if p_info:
+            result = FileIntegrityResult(
+                file_path=os.path.abspath(file_path),
+                asset_id=os.path.basename(file_path),
+                exists=p_info["exists"],
+                is_intact=p_info["is_intact"],
+                file_size_bytes=p_info["file_size_bytes"],
+                header_valid=p_info["header_valid"],
+                error_message=p_info["error_message"],
+            )
+            dump = result.model_dump(mode="json")
+            dump["available"] = True
+            dump["found"] = True
+            dump["real_filesystem"] = True
+            dump["format_detected"] = p_info["format"]
+            return dump
+
+    # 2. Check catalog store
     s = store or asset_repo
     node = s.get_asset_by_path(file_path)
 
@@ -284,7 +394,7 @@ def validate_file_integrity(
             "available": False,
             "found": False,
             "file_path": file_path,
-            "reason": f"File path '{file_path}' is not registered in asset catalog.",
+            "reason": f"File path '{file_path}' is not registered in asset catalog and not found on disk.",
         }
 
     header_valid = node.file_size_bytes > 32 and not node.is_corrupted
@@ -311,3 +421,56 @@ def validate_file_integrity(
     dump["available"] = True
     dump["found"] = True
     return dump
+
+
+def validate_shot_cut_range(
+    shot_code: str,
+    available_frames: Any,
+    project: Optional[str] = None,
+    shotgrid: Optional[Any] = None,
+) -> dict[str, Any]:
+    """
+    Tool 6: Validates whether a published frame sequence or cache covers the official
+    Autodesk ShotGrid / Flow Production Tracking editorial cut in/out range.
+    """
+    if shotgrid is None:
+        try:
+            from backend.integrations.shotgrid.adapter import shotgrid_adapter
+            sg = shotgrid_adapter
+        except ImportError:
+            sg = None
+    else:
+        sg = shotgrid
+
+    shot_info = sg.get_shot(project_name=project, shot_code=shot_code) if sg else None
+    if not shot_info:
+        return {
+            "available": False,
+            "shot_code": shot_code,
+            "reason": f"Shot '{shot_code}' not found in ShotGrid database",
+        }
+
+    cut_in = int(shot_info.get("cut_in", 1001))
+    cut_out = int(shot_info.get("cut_out", 1050))
+    expected_frames = set(range(cut_in, cut_out + 1))
+    actual_frames = set(available_frames) if available_frames is not None else set()
+
+    missing = sorted(list(expected_frames - actual_frames))
+    covered = expected_frames & actual_frames
+    total = len(expected_frames)
+    coverage_pct = round((len(covered) / total) * 100.0, 1) if total > 0 else 100.0
+
+    return {
+        "available": True,
+        "shot_code": shot_code,
+        "sequence": shot_info.get("sequence", "SQ010"),
+        "cut_in": cut_in,
+        "cut_out": cut_out,
+        "total_cut_frames": total,
+        "covered_frames": len(covered),
+        "is_complete": len(missing) == 0,
+        "missing_frames": missing,
+        "coverage_pct": coverage_pct,
+    }
+
+

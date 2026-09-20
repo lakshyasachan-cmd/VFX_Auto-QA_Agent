@@ -8,9 +8,12 @@ Functions:
 Supports both PostgreSQL / SQLAlchemy live sessions and standalone in-memory history_store.
 """
 
+import logging
 from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("vfx.agents.historical.tools")
 
 from backend.agents.historical.mock_history import (
     HistoricalDataStore,
@@ -33,29 +36,33 @@ def get_previous_resolution(
     """
     # 1. Check live database if session provided
     if session is not None:
-        stmt = (
-            select(Incident)
-            .where(Incident.id == incident_id)
-        )
-        inc_record = session.scalar(stmt)
-        if inc_record:
-            # Check for linked remediation plan
-            plan_stmt = (
-                select(RemediationPlan)
-                .where(RemediationPlan.incident_id == incident_id)
-                .order_by(RemediationPlan.created_at.desc())
+        try:
+            stmt = (
+                select(Incident)
+                .where(Incident.id == incident_id)
             )
-            plan = session.scalar(plan_stmt)
-            strat = plan.strategy if plan else (inc_record.resolution_summary or "UNKNOWN_STRATEGY")
-            success = (inc_record.status == "RESOLVED")
-            return {
-                "incident_id": inc_record.id,
-                "strategy": strat,
-                "was_successful": success,
-                "resolution_summary": inc_record.resolution_summary or "",
-                "resolved_at": inc_record.resolved_at.isoformat() if inc_record.resolved_at else None,
-                "action_taken": strat,
-            }
+            inc_record = session.scalar(stmt)
+            if inc_record:
+                # Check for linked remediation plan
+                plan_stmt = (
+                    select(RemediationPlan)
+                    .where(RemediationPlan.incident_id == incident_id)
+                    .order_by(RemediationPlan.created_at.desc())
+                )
+                plan = session.scalar(plan_stmt)
+                strat = plan.strategy if plan else (inc_record.resolution_summary or "UNKNOWN_STRATEGY")
+                success = (inc_record.status == "RESOLVED")
+                return {
+                    "incident_id": inc_record.id,
+                    "strategy": strat,
+                    "was_successful": success,
+                    "resolution_summary": inc_record.resolution_summary or "",
+                    "resolved_at": inc_record.resolved_at.isoformat() if inc_record.resolved_at else None,
+                    "action_taken": strat,
+                }
+        except Exception as exc:
+            logger.warning("Error querying resolution for incident '%s' from DB: %s", incident_id, exc)
+
 
     # 2. Check in-memory store
     s = store or history_store
@@ -78,22 +85,26 @@ def search_similar_incidents(
 
     # 1. Fetch from PostgreSQL database if session provided
     if session is not None:
-        stmt = select(Incident).order_by(Incident.created_at.desc()).limit(100)
-        db_records = session.scalars(stmt).all()
-        for rec in db_records:
-            candidates.append({
-                "id": rec.id,
-                "incident_id": rec.id,
-                "title": rec.title,
-                "description": rec.description,
-                "event_type": rec.event_type,
-                "source_system": rec.source_system,
-                "status": rec.status,
-                "error_signature": rec.error_signature,
-                "resolved_at": rec.resolved_at.isoformat() if rec.resolved_at else None,
-                "resolution_summary": rec.resolution_summary,
-                "metadata_json": rec.metadata_json or {},
-            })
+        try:
+            stmt = select(Incident).order_by(Incident.created_at.desc()).limit(100)
+            db_records = session.scalars(stmt).all()
+            for rec in db_records:
+                candidates.append({
+                    "id": rec.id,
+                    "incident_id": rec.id,
+                    "title": rec.title,
+                    "description": rec.description,
+                    "event_type": rec.event_type,
+                    "source_system": rec.source_system,
+                    "status": rec.status,
+                    "error_signature": rec.error_signature,
+                    "resolved_at": rec.resolved_at.isoformat() if rec.resolved_at else None,
+                    "resolution_summary": rec.resolution_summary,
+                    "metadata_json": rec.metadata_json or {},
+                })
+        except Exception as exc:
+            logger.warning("Failed querying PostgreSQL historical incidents: %s. Falling back to history_store.", exc)
+
 
     # 2. Fetch from history_store (or fallback if candidates empty)
     if not candidates:

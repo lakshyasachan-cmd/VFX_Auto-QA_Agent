@@ -54,6 +54,15 @@ class VFXToolImplementations:
 
     @staticmethod
     def retry_render_job(params: RetryRenderJobParams) -> dict[str, Any]:
+        from backend.integrations.render_farm.adapter import farm_adapter
+        if farm_adapter.is_live():
+            ok = farm_adapter.requeue_job(params.job_id)
+            return {
+                "success": ok,
+                "job_id": params.job_id,
+                "source": farm_adapter.farm_type,
+                "message": f"Job '{params.job_id}' requeued on {farm_adapter.farm_type} render farm.",
+            }
         return watsonx_adapter.retry_render_job(params)
 
     @staticmethod
@@ -62,6 +71,23 @@ class VFXToolImplementations:
 
     @staticmethod
     def update_shot_status(params: UpdateShotStatusParams) -> dict[str, Any]:
+        try:
+            from backend.integrations.shotgrid.adapter import shotgrid_adapter
+            if shotgrid_adapter.is_live():
+                ok = shotgrid_adapter.update_shot_status(
+                    shot_id_or_code=params.shot_id,
+                    new_status=params.status,
+                    note=params.note,
+                )
+                return {
+                    "success": ok,
+                    "shot_id": params.shot_id,
+                    "status": params.status,
+                    "source": "shotgrid",
+                    "message": f"Shot '{params.shot_id}' status updated to '{params.status}' in ShotGrid.",
+                }
+        except Exception:
+            pass
         return watsonx_adapter.update_shot_status(params)
 
     @staticmethod

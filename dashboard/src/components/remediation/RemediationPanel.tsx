@@ -15,9 +15,23 @@ export default function RemediationPanel({ plan, approvals }: Props) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    try {
+      const cached = localStorage.getItem("vfx_governance_decisions");
+      if (cached) {
+        const decisions = JSON.parse(cached);
+        setApprovalList(
+          approvals.map((a) => (decisions[a.id] ? { ...a, status: decisions[a.id] } : a))
+        );
+        return;
+      }
+    } catch (e) {}
+    setApprovalList(approvals);
+  }, [approvals]);
+
   if (!plan) {
     return (
-      <div className="bg-[#0f172a] border border-slate-800 rounded-lg p-6 text-center text-slate-500 font-mono text-xs">
+      <div className="bg-white border border-[#DADCE0] rounded-lg p-6 text-center text-[#80868B] font-mono text-xs shadow-sm">
         Remediation strategy planning in progress...
       </div>
     );
@@ -32,6 +46,12 @@ export default function RemediationPanel({ plan, approvals }: Props) {
       setApprovalList((prev) =>
         prev.map((a) => (a.id === approvalId ? { ...a, status: "APPROVED", decided_by: "lead_vfx_supervisor" } : a))
       );
+      try {
+        const cached = localStorage.getItem("vfx_governance_decisions");
+        const dec = cached ? JSON.parse(cached) : {};
+        dec[approvalId] = "APPROVED";
+        localStorage.setItem("vfx_governance_decisions", JSON.stringify(dec));
+      } catch (e) {}
       setStatusFeedback("Action approved and dispatched to MCP Execution Gateway.");
     } else {
       setStatusFeedback(`Error: ${res.error}`);
@@ -47,6 +67,12 @@ export default function RemediationPanel({ plan, approvals }: Props) {
       setApprovalList((prev) =>
         prev.map((a) => (a.id === approvalId ? { ...a, status: "REJECTED", decided_by: "lead_vfx_supervisor" } : a))
       );
+      try {
+        const cached = localStorage.getItem("vfx_governance_decisions");
+        const dec = cached ? JSON.parse(cached) : {};
+        dec[approvalId] = "REJECTED";
+        localStorage.setItem("vfx_governance_decisions", JSON.stringify(dec));
+      } catch (e) {}
       setStatusFeedback("Action proposal rejected.");
     } else {
       setStatusFeedback(`Error: ${res.error}`);
@@ -56,28 +82,28 @@ export default function RemediationPanel({ plan, approvals }: Props) {
   const getRiskBadge = (risk: string) => {
     switch (risk) {
       case "CRITICAL":
-        return "bg-rose-500/20 text-rose-300 border-rose-500/40";
+        return "bg-[#FCE8E6] text-[#C5221F] border border-[#FAD2CF]";
       case "HIGH":
-        return "bg-amber-500/20 text-amber-300 border-amber-500/40";
+        return "bg-[#FEF7E0] text-[#B06000] border border-[#FEEFC3]";
       case "MEDIUM":
-        return "bg-cyan-500/20 text-cyan-300 border-cyan-500/40";
+        return "bg-[#E8F0FE] text-[#1A73E8] border border-[#D2E3FC]";
       default:
-        return "bg-slate-800 text-slate-300 border-slate-700";
+        return "bg-[#F1F3F4] text-[#5F6368] border border-[#DADCE0]";
     }
   };
 
   return (
-    <div className="bg-[#0f172a] border border-slate-800 rounded-lg p-5 flex flex-col space-y-4">
-      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+    <div className="bg-white border border-[#DADCE0] rounded-lg p-5 flex flex-col space-y-4 shadow-sm">
+      <div className="flex items-center justify-between border-b border-[#E8EAED] pb-3">
         <div className="flex items-center space-x-2.5">
-          <div className="w-7 h-7 rounded bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+          <div className="w-7 h-7 rounded-lg bg-[#FEF7E0] border border-[#FEEFC3] flex items-center justify-center text-[#F9AB00]">
             <Wrench className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-xs font-mono font-bold tracking-wider text-slate-200 uppercase">
+            <h3 className="text-xs font-mono font-bold tracking-wider text-[#202124] uppercase">
               Proposed Remediation Plan & Human Governance Gate
             </h3>
-            <p className="text-[11px] text-slate-400 font-mono">Enforced by Deterministic Policy Engine</p>
+            <p className="text-[11px] text-[#5F6368] font-mono">Enforced by Deterministic Policy Engine</p>
           </div>
         </div>
 
@@ -87,24 +113,24 @@ export default function RemediationPanel({ plan, approvals }: Props) {
       </div>
 
       {statusFeedback && (
-        <div className="text-xs font-mono px-3 py-2 rounded bg-cyan-950/40 border border-cyan-800/60 text-cyan-300">
+        <div className="text-xs font-mono px-3 py-2 rounded-lg bg-[#E6F4EA] border border-[#CEEAD6] text-[#137333]">
           {statusFeedback}
         </div>
       )}
 
       {/* Plan Strategy Summary */}
-      <div className="text-xs text-slate-300 font-mono bg-slate-900/60 border border-slate-800/80 rounded p-3 leading-relaxed">
+      <div className="text-xs text-[#3C4043] font-mono bg-[#F8F9FA] border border-[#DADCE0] rounded-lg p-3 leading-relaxed">
         {plan.strategy}
       </div>
 
       {/* Sequenced Actions List */}
       <div className="space-y-3">
-        <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-[#5F6368] font-semibold">
           Proposed Action Items ({plan.actions.length})
         </div>
 
         {plan.actions.map((act, idx) => {
-          const approval = approvalList.find((a) => a.action === act.action) || approvalList[0];
+          const approval = approvalList.find((a) => a.action === act.action);
           const isPending = approval && approval.status === "PENDING";
           const isApproved = approval && approval.status === "APPROVED";
           const isRejected = approval && approval.status === "REJECTED";
@@ -112,29 +138,29 @@ export default function RemediationPanel({ plan, approvals }: Props) {
           return (
             <div
               key={idx}
-              className="bg-slate-900/80 border border-slate-800 rounded-lg p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+              className="bg-[#F8F9FA] border border-[#DADCE0] rounded-lg p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
             >
               <div className="space-y-1.5 max-w-xl">
                 <div className="flex items-center space-x-2">
-                  <span className="text-[10px] font-mono text-slate-500">#{idx + 1}</span>
-                  <span className="font-mono font-bold text-white tracking-tight">{act.action}</span>
+                  <span className="text-[10px] font-mono text-[#80868B]">#{idx + 1}</span>
+                  <span className="font-mono font-bold text-[#202124] tracking-tight">{act.action}</span>
                   <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded border uppercase ${getRiskBadge(act.risk)}`}>
                     {act.risk}
                   </span>
                   {act.requires_human_approval && (
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#FEF7E0] text-[#B06000] border border-[#FEEFC3]">
                       HITL GATE
                     </span>
                   )}
                 </div>
-                <p className="text-slate-300 text-[11px] leading-relaxed">{act.reason}</p>
+                <p className="text-[#5F6368] text-[11px] leading-relaxed">{act.reason}</p>
 
                 {/* Parameters Snippet */}
                 {act.parameters && Object.keys(act.parameters).length > 0 && (
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {Object.entries(act.parameters).map(([k, v]) => (
-                      <span key={k} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
-                        {k}: <span className="text-slate-200">{String(v)}</span>
+                      <span key={k} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-[#DADCE0] text-[#5F6368]">
+                        {k}: <span className="text-[#202124] font-medium">{String(v)}</span>
                       </span>
                     ))}
                   </div>
@@ -148,7 +174,7 @@ export default function RemediationPanel({ plan, approvals }: Props) {
                     <button
                       onClick={() => handleApprove(approval.id)}
                       disabled={loadingId === approval.id}
-                      className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-[11px] flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+                      className="px-3 py-1.5 rounded-md bg-[#188038] hover:bg-[#137333] text-white font-mono font-bold text-[11px] flex items-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm"
                     >
                       <CheckCircle className="w-3.5 h-3.5" />
                       <span>{loadingId === approval.id ? "AUTHORIZING..." : "APPROVE"}</span>
@@ -156,7 +182,7 @@ export default function RemediationPanel({ plan, approvals }: Props) {
                     <button
                       onClick={() => handleReject(approval.id)}
                       disabled={loadingId === approval.id}
-                      className="px-3 py-1.5 rounded bg-slate-800 hover:bg-rose-900/60 hover:text-rose-300 text-slate-300 font-mono font-bold text-[11px] flex items-center space-x-1.5 border border-slate-700 transition-colors disabled:opacity-50"
+                      className="px-3 py-1.5 rounded-md bg-white hover:bg-[#FCE8E6] hover:text-[#C5221F] text-[#D93025] font-mono font-bold text-[11px] flex items-center space-x-1.5 border border-[#DADCE0] hover:border-[#FAD2CF] transition-colors disabled:opacity-50 shadow-sm"
                     >
                       <XCircle className="w-3.5 h-3.5" />
                       <span>REJECT</span>
@@ -165,21 +191,21 @@ export default function RemediationPanel({ plan, approvals }: Props) {
                 )}
 
                 {isApproved && (
-                  <div className="px-3 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[11px] flex items-center space-x-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5" />
+                  <div className="px-3 py-1.5 rounded-md bg-[#E6F4EA] border border-[#CEEAD6] text-[#137333] font-mono text-[11px] flex items-center space-x-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#188038]" />
                     <span>APPROVED ({approval.decided_by || "SUPERVISOR"})</span>
                   </div>
                 )}
 
                 {isRejected && (
-                  <div className="px-3 py-1.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 font-mono text-[11px] flex items-center space-x-1.5">
+                  <div className="px-3 py-1.5 rounded-md bg-[#FCE8E6] border border-[#FAD2CF] text-[#C5221F] font-mono text-[11px] flex items-center space-x-1.5">
                     <XCircle className="w-3.5 h-3.5" />
                     <span>REJECTED</span>
                   </div>
                 )}
 
                 {!approval && (
-                  <div className="px-3 py-1.5 rounded bg-slate-800 text-slate-400 font-mono text-[11px]">
+                  <div className="px-3 py-1.5 rounded-md bg-[#F1F3F4] text-[#5F6368] border border-[#DADCE0] font-mono text-[11px]">
                     AUTO-GOVERNED
                   </div>
                 )}

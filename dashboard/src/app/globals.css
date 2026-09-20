@@ -3,29 +3,46 @@
 @tailwind utilities;
 
 :root {
-  --background: #090d16;
-  --foreground: #f8fafc;
+  --background: #F8F9FA;
+  --foreground: #202124;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  font-family: "Google Sans", "Product Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
   overflow-x: hidden;
+  cursor: default;
+  /* Prevent text cursor flash on click for non-editable elements */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-/* Custom scrollbar for dense control-room tables */
+/* Re-enable selection inside inputs, textareas, and selects */
+input, textarea, select, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: auto;
+}
+
+/* Pointer cursor for all interactive elements */
+button, a, [role="button"], select {
+  cursor: pointer;
+}
+
+
+/* Custom clean scrollbar for Google light theme */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #F1F3F4;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #DADCE0;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #BDC1C6;
 }
