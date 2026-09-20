@@ -20,12 +20,35 @@ import backend.database.models  # noqa: F401
 
 
 
+from urllib.parse import urlparse
+
+
 def get_database_url() -> str:
     """Retrieve database URL from environment or default to local sqlite/postgres."""
     url = os.getenv("DATABASE_URL", "sqlite:///./vfx_platform.db").strip()
     # Render/Heroku legacy dialect prefix normalization for SQLAlchemy 2.0
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
+
+    # Detect if running in cloud container (Render/Docker) with an invalid localhost host
+    is_cloud = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+    if url.startswith("postgresql://"):
+        try:
+            parsed = urlparse(url)
+            host = (parsed.hostname or "").lower()
+            if is_cloud and (not host or host in ("localhost", "127.0.0.1", "::1")):
+                print("\n" + "=" * 75)
+                print(" [CONFIG WARNING] DATABASE_URL points to 'localhost' inside Render!")
+                print(" PostgreSQL does not run inside the web service container.")
+                print(" In your Render Web Service -> Environment:")
+                print(" Set DATABASE_URL to your Render PostgreSQL Internal or External URL.")
+                print(" (e.g. postgresql://user:pass@dpg-xxxx.oregon-postgres.render.com/dbname)")
+                print(" Temporarily falling back to SQLite to allow server to boot.")
+                print("=" * 75 + "\n")
+                return "sqlite:///./vfx_platform.db"
+        except Exception:
+            pass
+
     # Ensure SSL for external Render and cloud database connections
     if ("render.com" in url or "supabase" in url or "neon.tech" in url) and "sslmode" not in url:
         sep = "&" if "?" in url else "?"

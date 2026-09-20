@@ -13,7 +13,14 @@ PORT="${PORT:-8001}"
 echo "[1/2] Checking database readiness..."
 python -c "
 import time, sys
-from backend.database.session import engine, init_db
+from backend.database.session import engine, init_db, get_database_url
+from urllib.parse import urlparse
+
+url = get_database_url()
+parsed = urlparse(url)
+target_host = parsed.hostname or 'local SQLite'
+print(f'       Target database: {parsed.scheme} -> host: {target_host}')
+
 for attempt in range(1, 16):
     try:
         with engine.connect() as conn:
@@ -24,7 +31,7 @@ for attempt in range(1, 16):
     except Exception as exc:
         print(f'       Waiting for database to accept connections (attempt {attempt}/15)... {exc}')
         time.sleep(2)
-print('       Warning: Could not connect to database after 30s. Starting server with fallback.')
+print('       Notice: Database unreachable after 30s. Starting server with fallback.')
 "
 
 echo "[2/2] Running Alembic migrations (if any)..."
