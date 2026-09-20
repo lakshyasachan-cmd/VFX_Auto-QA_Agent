@@ -90,7 +90,17 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db(target_engine=None) -> None:
     """Initialize all database tables defined on Base.metadata."""
     eng = target_engine or engine
-    Base.metadata.create_all(bind=eng)
+    try:
+        Base.metadata.create_all(bind=eng)
+    except Exception as exc:
+        print(f"[DATABASE NOTICE] init_db error: {exc}")
+
+
+# Auto-initialize database tables immediately when engine is created
+try:
+    init_db(engine)
+except Exception as _auto_init_err:
+    print(f"[DATABASE NOTICE] Auto-initialization warning: {_auto_init_err}")
 
 
 def drop_db(target_engine=None) -> None:

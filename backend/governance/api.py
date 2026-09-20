@@ -73,7 +73,12 @@ async def list_approvals(
                         )
                     )
     except Exception as e:
-        logger.warning("Error fetching approvals from PostgreSQL: %s", e)
+        logger.warning("Error fetching approvals from PostgreSQL (%s). Ensuring schema...", e)
+        try:
+            from backend.database.session import init_db
+            init_db()
+        except Exception:
+            pass
 
     return ApprovalListResponse(total=len(approvals), approvals=approvals)
 

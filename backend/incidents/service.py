@@ -38,13 +38,15 @@ class IncidentService:
     def _ensure_initial_seeds(self) -> None:
         """Seed initial production incidents if the database is currently empty."""
         try:
+            from backend.database.session import init_db
+            init_db()
             with SessionLocal() as db:
                 count = db.query(Incident).count()
                 if count == 0:
                     logger.info("Database has 0 incidents. Seeding default VFX incidents for Mission Control.")
                     self._seed_default_incidents(db)
         except Exception as e:
-            logger.warning("Error checking or seeding default incidents: %s", e)
+            logger.warning("Notice during incident initial seed verification: %s", e)
 
     def _seed_default_incidents(self, db) -> None:
         """Populate initial realistic VFX incidents in PostgreSQL."""
@@ -350,7 +352,16 @@ class IncidentService:
                 records = db.execute(query).unique().scalars().all()
                 return [self._serialize_incident(inc) for inc in records]
         except Exception as e:
-            logger.error("Error listing incidents from database: %s", e)
+            logger.warning("Database error listing incidents (%s). Self-healing schema...", e)
+            try:
+                from backend.database.session import init_db
+                init_db()
+                self._ensure_initial_seeds()
+                with SessionLocal() as db:
+                    records = db.execute(query).unique().scalars().all()
+                    return [self._serialize_incident(inc) for inc in records]
+            except Exception as retry_err:
+                logger.error("Error after schema heal: %s", retry_err)
             return []
 
     def get_incident(self, incident_id: str) -> Optional[dict[str, Any]]:
