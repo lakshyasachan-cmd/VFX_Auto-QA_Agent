@@ -113,13 +113,15 @@ async def health_check(
     # Check database connectivity
     db_connected = False
     db_name = None
+    db_error = None
     db_dialect = engine.url.drivername
     try:
         with engine.connect() as conn:
             db_name = conn.execute(text("SELECT current_database();")).scalar()
             db_connected = True
-    except Exception:
+    except Exception as exc:
         db_connected = False
+        db_error = str(exc)
 
     # Check Redis connectivity
     is_redis_healthy = await check_redis_health(service.redis_client)
@@ -132,6 +134,7 @@ async def health_check(
         database_connected=db_connected,
         database_name=db_name,
         database_dialect=db_dialect,
+        database_error=db_error,
         service="vfx-event-ingestion",
         timestamp=format_iso8601_utc(now_utc()),
     )

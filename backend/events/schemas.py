@@ -126,6 +126,7 @@ class HealthResponse(BaseModel):
     database_connected: bool = True
     database_name: Optional[str] = None
     database_dialect: Optional[str] = None
+    database_error: Optional[str] = None
     service: str = "vfx-event-ingestion"
     timestamp: str
 
