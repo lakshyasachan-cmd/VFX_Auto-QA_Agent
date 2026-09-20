@@ -22,7 +22,15 @@ import backend.database.models  # noqa: F401
 
 def get_database_url() -> str:
     """Retrieve database URL from environment or default to local sqlite/postgres."""
-    return os.getenv("DATABASE_URL", "sqlite:///./vfx_platform.db")
+    url = os.getenv("DATABASE_URL", "sqlite:///./vfx_platform.db").strip()
+    # Render/Heroku legacy dialect prefix normalization for SQLAlchemy 2.0
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    # Ensure SSL for external Render and cloud database connections
+    if ("render.com" in url or "supabase" in url or "neon.tech" in url) and "sslmode" not in url:
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}sslmode=require"
+    return url
 
 
 # Default sync engine and session factory
