@@ -36,10 +36,11 @@ logger = logging.getLogger("vfx.events.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: test database connection and log status
+    # Startup: test database connection and initialize tables
     from sqlalchemy import text
-    from backend.database.session import engine
+    from backend.database.session import engine, init_db
     try:
+        init_db()
         with engine.connect() as conn:
             db_name = conn.execute(text("SELECT current_database();")).scalar()
             db_user = conn.execute(text("SELECT current_user;")).scalar()
