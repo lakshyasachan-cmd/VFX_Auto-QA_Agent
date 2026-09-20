@@ -95,18 +95,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+import os
+cors_env = os.getenv("CORS_ORIGINS", "").strip()
+allowed_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://dashboard:3000",
+    "http://localhost",
+    "http://localhost:80",
+]
+if cors_env and cors_env != "*":
+    allowed_origins.extend([orig.strip() for orig in cors_env.split(",") if orig.strip()])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        # Local development
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        # Docker internal service hostname (dashboard container)
-        "http://dashboard:3000",
-        # Via Nginx reverse proxy on host
-        "http://localhost",
-        "http://localhost:80",
-    ],
+    allow_origins=["*"] if cors_env == "*" else allowed_origins,
+    allow_origin_regex=r"https://.*" if cors_env == "*" else r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
