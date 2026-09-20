@@ -27,7 +27,8 @@ config = context.config
 # Dynamic database URL override from environment
 db_url = get_database_url()
 if db_url:
-    config.set_main_option("sqlalchemy.url", db_url)
+    # Escape '%' as '%%' to prevent configparser interpolation syntax error with encoded passwords
+    config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:
@@ -72,13 +73,9 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    from backend.database.session import engine as app_engine
 
-    with connectable.connect() as connection:
+    with app_engine.connect() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata
         )
